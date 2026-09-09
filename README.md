@@ -2,7 +2,7 @@
 
 This repository contains a Bash-based smoke and validation tester for a Codexion project binary.
 
-The script builds the project, checks argument validation, runs a few representative executions, and optionally runs Valgrind on a minimal valid invocation to catch memory errors, leaks, and thread-synchronization issues. It is designed as a quick subject-level validation harness for a multithreaded coding-simulation program.
+The script builds the project, checks argument validation, runs a few representative executions, and optionally runs Valgrind on minimal valid FIFO and EDF invocations to catch memory errors, leaks, and thread-synchronization issues. It is designed as a quick subject-level validation harness for a multithreaded coding-simulation program.
 
 ## What it checks
 
@@ -14,8 +14,8 @@ The tester validates the following:
 - invalid argument combinations are rejected with a non-zero exit status
 - valid FIFO and EDF invocations are accepted
 - the simulation emits the expected log format when it runs
-- a minimal Valgrind Memcheck run reports no memory errors or leaks when Valgrind is installed
-- a Helgrind run checks for thread-synchronization problems such as data races or locking issues on a minimal valid execution
+- separate Valgrind Memcheck runs for FIFO and EDF report no memory errors or leaks when Valgrind is installed
+- separate Helgrind runs for FIFO and EDF check for thread-synchronization problems such as data races or locking issues
 - the validation is meant to provide subject-level confidence that the program behaves correctly under a small valid execution and without common thread/memory problems
 
 ## Requirements
@@ -27,7 +27,7 @@ Before running the tester, ensure:
 - `make` is available
 - `pthread` support is enabled in the project build
 - `valgrind` is optional, but recommended for the memory and thread checks
-- the tester uses Memcheck for memory validation and Helgrind for thread synchronization validation when the tool is available
+- the tester uses Memcheck and Helgrind for both FIFO and EDF validation when the tools are available
 
 ## Usage
 

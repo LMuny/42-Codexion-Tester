@@ -190,63 +190,68 @@ section '[4/4] Valgrind checks'
 if ! command -v valgrind >/dev/null 2>&1; then
 	skip 'Valgrind is not installed'
 else
-	valgrind_log="$TEST_DIR/valgrind.log"
 	valgrind_args=(valgrind --version)
 	valgrind_version=$("${valgrind_args[@]}" 2>/dev/null)
 	printf '%b  Tool:%b %s\n' "$DIM" "$RESET" "$valgrind_version"
-	valgrind_args=(valgrind --leak-check=full --show-leak-kinds=all \
-		--errors-for-leak-kinds=all --track-origins=yes --num-callers=20 \
-		--error-exitcode=99 "$PROGRAM" 1 100 1 1 1 0 0 fifo)
-	if command -v timeout >/dev/null 2>&1; then
-		valgrind_command=(timeout --signal=TERM 10s "${valgrind_args[@]}")
-	else
-		valgrind_command=("${valgrind_args[@]}")
-	fi
-	printf '%b  Command:%b valgrind --leak-check=full --track-origins=yes %s 1 100 1 1 1 0 0 fifo\n' \
-		"$DIM" "$RESET" "$PROGRAM"
-	if run_logged 'running Valgrind' "$valgrind_log" "${valgrind_command[@]}"; then
-		status=0
-	else
-		status=$?
-	fi
-	error_summary=$(grep 'ERROR SUMMARY:' "$valgrind_log" | tail -n 1 || true)
-	leak_summary=$(grep -E 'in use at exit|definitely lost|indirectly lost|possibly lost|still reachable' \
-		"$valgrind_log" | tail -n 6 || true)
-	if [[ $status -eq 0 ]] && grep -q 'ERROR SUMMARY: 0 errors' "$valgrind_log"; then
-		pass 'Valgrind Memcheck reports no errors for a minimal valid run'
-		printf '%b  Memory summary:%b\n%s\n' "$DIM" "$RESET" "$leak_summary"
-	else
-		fail "Valgrind Memcheck detected problems (exit status $status)"
-		printf '%b  Error summary:%b\n%s\n' "$DIM" "$RESET" "${error_summary:-not available}"
-		printf '%b  Leak summary:%b\n%s\n' "$DIM" "$RESET" "${leak_summary:-not available}"
-		printf '%b  Recent diagnostics:%b\n' "$DIM" "$RESET"
-		grep -E 'Invalid |ERROR SUMMARY|at 0x|definitely lost|indirectly lost|possibly lost' \
-			"$valgrind_log" | tail -n 20 || true
-	fi
+	for scheduler in fifo edf; do
+		valgrind_log="$TEST_DIR/valgrind-$scheduler.log"
+		valgrind_args=(valgrind --leak-check=full --show-leak-kinds=all \
+			--errors-for-leak-kinds=all --track-origins=yes --num-callers=20 \
+			--error-exitcode=99 "$PROGRAM" 1 100 1 1 1 0 0 "$scheduler")
+		if command -v timeout >/dev/null 2>&1; then
+			valgrind_command=(timeout --signal=TERM 10s "${valgrind_args[@]}")
+		else
+			valgrind_command=("${valgrind_args[@]}")
+		fi
+		printf '%b  Command:%b valgrind --leak-check=full --track-origins=yes %s 1 100 1 1 1 0 0 %s\n' \
+			"$DIM" "$RESET" "$PROGRAM" "$scheduler"
+		if run_logged "running Valgrind ($scheduler)" "$valgrind_log" "${valgrind_command[@]}"; then
+			status=0
+		else
+			status=$?
+		fi
+		error_summary=$(grep 'ERROR SUMMARY:' "$valgrind_log" | tail -n 1 || true)
+		leak_summary=$(grep -E 'in use at exit|definitely lost|indirectly lost|possibly lost|still reachable' \
+			"$valgrind_log" | tail -n 6 || true)
+		if [[ $status -eq 0 ]] && grep -q 'ERROR SUMMARY: 0 errors' "$valgrind_log"; then
+			pass "Valgrind Memcheck reports no errors for a minimal $scheduler run"
+			printf '%b  Memory summary:%b\n%s\n' "$DIM" "$RESET" "$leak_summary"
+		else
+			fail "Valgrind Memcheck detected problems in the $scheduler run (exit status $status)"
+			printf '%b  Error summary:%b\n%s\n' "$DIM" "$RESET" "${error_summary:-not available}"
+			printf '%b  Leak summary:%b\n%s\n' "$DIM" "$RESET" "${leak_summary:-not available}"
+			printf '%b  Recent diagnostics:%b\n' "$DIM" "$RESET"
+			grep -E 'Invalid |ERROR SUMMARY|at 0x|definitely lost|indirectly lost|possibly lost' \
+				"$valgrind_log" | tail -n 20 || true
+		fi
+	done
 
 	if valgrind --tool=helgrind --version >/dev/null 2>&1; then
-		helgrind_log="$TEST_DIR/helgrind.log"
-		helgrind_args=(valgrind --tool=helgrind --error-exitcode=99 --num-callers=20 "$PROGRAM" 1 100 1 1 1 0 0 fifo)
-		if command -v timeout >/dev/null 2>&1; then
-			helgrind_command=(timeout --signal=TERM 15s "${helgrind_args[@]}")
-		else
-			helgrind_command=("${helgrind_args[@]}")
-		fi
-		printf '%b  Command:%b valgrind --tool=helgrind %s 1 100 1 1 1 0 0 fifo\n' \
-			"$DIM" "$RESET" "$PROGRAM"
-		if run_logged 'running Helgrind' "$helgrind_log" "${helgrind_command[@]}"; then
-			helgrind_status=0
-		else
-			helgrind_status=$?
-		fi
-		helgrind_summary=$(grep -E 'ERROR SUMMARY:|possible data race|pthread.*warning|WARNING:' "$helgrind_log" | tail -n 20 || true)
-		if [[ $helgrind_status -eq 0 ]] && grep -q 'ERROR SUMMARY: 0 errors' "$helgrind_log"; then
-			pass 'Helgrind reports no synchronization errors for a minimal valid run'
-		else
-			fail "Helgrind detected thread-synchronization issues (exit status $helgrind_status)"
-			printf '%b  Helgrind summary:%b\n%s\n' "$DIM" "$RESET" "${helgrind_summary:-not available}"
-			grep -E 'ERROR SUMMARY|possible data race|pthread|WARNING:' "$helgrind_log" | tail -n 20 || true
-		fi
+		for scheduler in fifo edf; do
+			helgrind_log="$TEST_DIR/helgrind-$scheduler.log"
+			helgrind_args=(valgrind --tool=helgrind --error-exitcode=99 --num-callers=20 \
+				"$PROGRAM" 1 100 1 1 1 0 0 "$scheduler")
+			if command -v timeout >/dev/null 2>&1; then
+				helgrind_command=(timeout --signal=TERM 15s "${helgrind_args[@]}")
+			else
+				helgrind_command=("${helgrind_args[@]}")
+			fi
+			printf '%b  Command:%b valgrind --tool=helgrind %s 1 100 1 1 1 0 0 %s\n' \
+				"$DIM" "$RESET" "$PROGRAM" "$scheduler"
+			if run_logged "running Helgrind ($scheduler)" "$helgrind_log" "${helgrind_command[@]}"; then
+				helgrind_status=0
+			else
+				helgrind_status=$?
+			fi
+			helgrind_summary=$(grep -E 'ERROR SUMMARY:|possible data race|pthread.*warning|WARNING:' "$helgrind_log" | tail -n 20 || true)
+			if [[ $helgrind_status -eq 0 ]] && grep -q 'ERROR SUMMARY: 0 errors' "$helgrind_log"; then
+				pass "Helgrind reports no synchronization errors for a minimal $scheduler run"
+			else
+				fail "Helgrind detected thread-synchronization issues in the $scheduler run (exit status $helgrind_status)"
+				printf '%b  Helgrind summary:%b\n%s\n' "$DIM" "$RESET" "${helgrind_summary:-not available}"
+				grep -E 'ERROR SUMMARY|possible data race|pthread|WARNING:' "$helgrind_log" | tail -n 20 || true
+			fi
+		done
 	else
 		skip 'Helgrind is not available'
 	fi
