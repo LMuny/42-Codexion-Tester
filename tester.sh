@@ -186,6 +186,47 @@ else
 	sed -n '1,20p' "$simulation_output"
 fi
 
+stress_cases=(
+	'2 100 1 1 1 1 0 fifo'
+	'3 100 1 1 1 1 0 fifo'
+	'4 100 1 1 1 1 0 fifo'
+	'5 100 1 1 1 1 0 fifo'
+	'10 100 1 1 1 1 0 fifo'
+	'2 50 5 5 5 1 0 fifo'
+	'3 200 10 10 10 1 0 fifo'
+	'4 100 100 10 10 10 0 fifo'
+	'4 200 50 20 20 2 0 fifo'
+	'6 300 20 20 20 2 0 fifo'
+	'2 100 1 1 1 1 0 edf'
+	'3 100 1 1 1 1 0 edf'
+	'4 100 1 1 1 1 0 edf'
+	'5 100 1 1 1 1 0 edf'
+	'10 100 1 1 1 1 0 edf'
+	'2 50 5 5 5 1 0 edf'
+	'3 200 10 10 10 1 0 edf'
+	'4 100 100 10 10 10 0 edf'
+	'4 200 50 20 20 2 0 edf'
+	'6 300 20 20 20 2 0 edf'
+)
+
+for case_args in "${stress_cases[@]}"; do
+	stress_log="$TEST_DIR/stress-$(echo "$case_args" | tr ' ' '-')"
+	# Run stress cases with longer timeout (30s)
+	if command -v timeout >/dev/null 2>&1; then
+		timeout --signal=TERM 30s "$PROGRAM" $case_args >"$stress_log" 2>&1
+		status=$?
+	else
+		run_program "$stress_log" $case_args
+		status=$?
+	fi
+	if [[ $status -eq 0 ]]; then
+		pass "stress case passed quickly: $case_args"
+	else
+		fail "stress case hangs or exits early: $case_args"
+		sed -n '1,40p' "$stress_log"
+	fi
+done
+
 section '[4/4] Valgrind checks'
 if ! command -v valgrind >/dev/null 2>&1; then
 	skip 'Valgrind is not installed'
