@@ -126,6 +126,47 @@ expect_accepted()
 	fi
 }
 
+check_log_consistency()
+{
+	local log_file=$1
+	local coder_count=$2
+	awk -v coder_count="$coder_count" '
+		function fail(msg) {
+			print "incoherent log: " msg > "/dev/stderr"
+			exit 1
+		}
+		{
+			if ($0 ~ /^[0-9]+ [0-9]+ has taken a dongle$/) {
+				taken[$2] = 1
+				next
+			}
+			if ($0 ~ /^[0-9]+ [0-9]+ is compiling$/) {
+				if (taken[$2] != 1) {
+					fail("coder " $2 " compiles without taking a dongle first")
+				}
+				taken[$2] = 0
+				next
+			}
+			if ($0 ~ /^[0-9]+ [0-9]+ burned out$/) {
+				if (coder_count == 1 && taken[$2] != 1) {
+					next
+				}
+				if (taken[$2] == 1) {
+					taken[$2] = 0
+					next
+				}
+			}
+		}
+		END {
+			for (c in taken) {
+				if (taken[c] == 1) {
+					fail("coder " c " ended with a dongle still held")
+				}
+			}
+		}
+	' "$log_file"
+}
+
 printf '%bCodexion tester%b\n' "$BOLD$CYAN" "$RESET"
 printf '%bRepository:%b %s\n' "$DIM" "$RESET" "$ROOT_DIR"
 printf '%bTip: set NO_COLOR=1 for plain output.%b\n' "$DIM" "$RESET"
@@ -160,12 +201,22 @@ expect_rejected 'rejects a negative coder count' \
 	-1 100 10 10 10 1 0 fifo
 expect_rejected 'rejects a zero coder count' \
 	0 100 10 10 10 1 0 fifo
+expect_accepted 'accepts a single coder that burns out' \
+	1 5 100 100 100 1 0 fifo
 expect_rejected 'rejects non-integer timing input' \
 	1 abc 10 10 10 1 0 fifo
 expect_rejected 'rejects a negative cooldown' \
 	1 100 10 10 10 1 -1 fifo
 expect_rejected 'rejects an unknown scheduler' \
 	1 100 10 10 10 1 0 round-robin
+expect_rejected 'rejects uppercase FIFO' \
+	1 100 10 10 10 1 0 FIFO
+expect_rejected 'rejects uppercase EDF' \
+	1 100 10 10 10 1 0 EDF
+expect_rejected 'rejects malformed fifo scheduler input' \
+	1 100 10 10 10 1 0 fif0
+expect_rejected 'rejects malformed edf scheduler input' \
+	1 100 10 10 10 1 0 edff
 
 section '[3/4] Valid execution and output checks'
 expect_accepted 'accepts FIFO arguments' \
@@ -178,12 +229,31 @@ if run_program "$simulation_output" 2 100 1 1 1 1 0 fifo; then
 	if grep -Eq '^[0-9]+ [0-9]+ (has taken a dongle|is compiling|is debugging|is refactoring|burned out)$' \
 		"$simulation_output"; then
 		pass 'uses the required log format when simulation logs are emitted'
+		if check_log_consistency "$simulation_output" 2 >/dev/null 2>&1; then
+			pass 'logs are coherent for a valid two-coder run'
+		else
+			fail 'logs are incoherent for a valid two-coder run'
+			sed -n '1,20p' "$simulation_output"
+		fi
 	else
 		skip 'log-format check (the executable emitted no simulation state logs)'
 	fi
 else
 	fail 'two-coder simulation exits before the timeout'
 	sed -n '1,20p' "$simulation_output"
+fi
+
+single_coder_log="$TEST_DIR/single-coder-log"
+if run_program "$single_coder_log" 1 5 100 100 100 1 0 fifo; then
+	if check_log_consistency "$single_coder_log" 1 >/dev/null 2>&1; then
+		pass 'single-coder burnout log is coherent'
+	else
+		fail 'single-coder burnout log is inconsistent'
+		sed -n '1,20p' "$single_coder_log"
+	fi
+else
+	fail 'single-coder simulation exits unexpectedly'
+	sed -n '1,20p' "$single_coder_log"
 fi
 
 stress_cases=(
