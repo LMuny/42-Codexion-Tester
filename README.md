@@ -1,31 +1,22 @@
 # Codexion Tester
 
-A small, focused test harness for exercising and validating a Codexion project binary. The tester is implemented as a Bash script that builds the project, exercises common and stress scenarios (FIFO and EDF scheduling), and optionally runs Valgrind/Helgrind checks for memory and threading issues.
+This repository contains a Bash-based validation harness for a Codexion project binary. The script builds the project, checks argument handling, exercises valid and invalid runs, tests scheduler behavior, and optionally runs `valgrind`/`helgrind` checks when those tools are available.
 
-## Overview
+## What the tester does
 
-- Builds the project using `make re` and looks for the `codexion` binary at the repository root.
-- Runs argument-validation checks, functional smoke runs, and a set of stress tests for FIFO and EDF modes.
-- Optionally runs Valgrind Memcheck and Helgrind when Valgrind is available.
-- Emits a concise summary counting passed, failed, and skipped checks.
+The script performs the following checks:
 
-## Features
+- Builds the project with `make re`
+- Verifies the Makefile includes the required `-pthread` flag
+- Ensures the compiled binary exists at the repository root as `codexion`
+- Rejects invalid argument combinations and malformed scheduler names
+- Accepts valid runs for the supported schedulers
+- Verifies the expected simulation log format and logical consistency
+- Runs stress cases for FIFO and EDF scenarios
+- Runs optional Valgrind Memcheck and Helgrind checks for memory and thread-safety issues
+- Prints a final summary with pass/fail/skip counts
 
-- Build verification and required-flag checks (expects `-pthread` in the build)
-- Argument validation (rejects invalid combinations)
-- Functional smoke and representative scenario runs
-- Stress-run suites for FIFO and EDF scheduling
-- Optional Valgrind Memcheck and Helgrind runs for memory and synchronization diagnostics
-- Colorized output by default, with `NO_COLOR` to force plain text
-
-## Requirements
-
-- A POSIX-compatible shell (Bash recommended)
-- `make` and a working `Makefile` that produces `codexion` at the repository root
-- `gcc`/toolchain as required by the project
-- `valgrind` (optional, recommended for deeper diagnostics)
-
-## Quickstart
+## Supported usage
 
 From the repository root, run:
 
@@ -33,59 +24,69 @@ From the repository root, run:
 ./tester.sh
 ```
 
-Or explicitly with Bash:
+To test the LIFO scheduler mode:
 
 ```bash
-bash tester.sh
+./tester.sh -lifo
 ```
 
-To disable ANSI colors and get plain text output:
+To disable ANSI color output:
 
 ```bash
 NO_COLOR=1 ./tester.sh
 ```
 
-To run Valgrind checks when available (Valgrind is autodetected; no extra args required):
+The script accepts no other runtime arguments. Any extra positional arguments or unsupported scheduler names are rejected.
 
-```bash
-./tester.sh
-```
+## Requirements
 
-The tester will automatically skip Valgrind/Helgrind runs if `valgrind` is not installed.
+- Bash or a POSIX-compatible shell
+- `make`
+- A working `Makefile` that produces `./codexion` in the project root
+- A C/C++ toolchain such as `gcc`
+- `valgrind` is optional but recommended for deeper diagnostics
 
-## Usage / Options
+## Expected behavior
 
-The script is designed to be run as-is. It respects the following environment variables for quick adjustments:
+The tester exits with status code `0` when all non-skipped checks pass. It exits with a non-zero status if any required checks fail.
 
-- `NO_COLOR=1` — disable ANSI color output
-- `VERBOSE=1` — enable more verbose logging (subject to script support)
-
-For advanced use, inspect `tester.sh` to see additional flags or editable timeouts.
-
-## Output
-
-On success the script prints a final summary, for example:
+A typical successful summary looks like this:
 
 ```text
 Summary: 26 passed, 0 failed, 0 skipped
 ```
 
-The script exits with a zero status when all non-skipped checks pass. A non-zero exit code indicates at least one failed check.
+## Notes on the scheduler checks
+
+The harness supports the following scheduler values:
+
+- `fifo`
+- `lifo` (via `./tester.sh -lifo`)
+- `edf`
+
+It explicitly rejects malformed scheduler strings, uppercase variants, and invalid combinations such as missing or extra arguments.
+
+## Valgrind support
+
+If `valgrind` is installed, the tester automatically runs:
+
+- Memcheck on a minimal valid simulation
+- Helgrind on a minimal valid simulation
+
+If the tool is not installed, the script reports the check as skipped instead of failing.
 
 ## Troubleshooting
 
 - If the build fails, run `make re` manually and inspect the compiler output.
-- If `codexion` is not produced at the repo root, ensure the `Makefile` target produces `./codexion` or adjust the script accordingly.
-- If Valgrind runs are skipped, install `valgrind` (package name may vary per distro).
-
-## Contributing
-
-Bug reports and small improvements are welcome. If you change test cases or add new stress scenarios, please keep them small and well-documented.
+- If `codexion` is not produced, ensure your Makefile targets `./codexion` at the project root.
+- If Valgrind checks are skipped, install `valgrind` for your Linux distribution.
+- If a test fails, read the script output carefully; it prints the relevant failing command output and summaries.
 
 ## Files
 
-- `tester.sh` — the test harness script you run to execute the checks and diagnostics.
+- `tester.sh` — the main validation script
+- `README.md` — project usage and behavior documentation
 
 ## License
 
-This repository does not include an explicit license. Add one if you plan to share this project publicly.
+This repository does not currently include a license file. If you plan to distribute it publicly, add an appropriate open-source license.
