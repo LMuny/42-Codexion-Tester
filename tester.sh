@@ -11,6 +11,16 @@ TEST_DIR=$(mktemp -d)
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
+SCHEDULER=fifo
+SCHEDULER_LABEL=FIFO
+
+if [[ ${1:-} == '-lifo' ]]; then
+	SCHEDULER=lifo
+	SCHEDULER_LABEL=LIFO
+elif [[ $# -gt 0 ]]; then
+	printf 'Usage: %s [-lifo]\n' "$0" >&2
+	exit 2
+fi
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
 	RESET=$'\033[0m'
@@ -32,6 +42,7 @@ fi
 
 cleanup()
 {
+	make -C "$ROOT_DIR" clean >/dev/null 2>&1 || true
 	rm -f "$BUILD_LOG"
 	rm -rf "$TEST_DIR"
 }
@@ -196,36 +207,36 @@ section '[2/4] Argument validation checks'
 expect_rejected 'rejects missing arguments' \
 	1 100 10 10 10 1 0
 expect_rejected 'rejects extra arguments' \
-	1 100 10 10 10 1 0 fifo extra
+	1 100 10 10 10 1 0 "$SCHEDULER" extra
 expect_rejected 'rejects a negative coder count' \
-	-1 100 10 10 10 1 0 fifo
+	-1 100 10 10 10 1 0 "$SCHEDULER"
 expect_rejected 'rejects a zero coder count' \
-	0 100 10 10 10 1 0 fifo
+	0 100 10 10 10 1 0 "$SCHEDULER"
 expect_accepted 'accepts a single coder that burns out' \
-	1 5 100 100 100 1 0 fifo
+	1 5 100 100 100 1 0 "$SCHEDULER"
 expect_rejected 'rejects non-integer timing input' \
-	1 abc 10 10 10 1 0 fifo
+	1 abc 10 10 10 1 0 "$SCHEDULER"
 expect_rejected 'rejects a negative cooldown' \
-	1 100 10 10 10 1 -1 fifo
+	1 100 10 10 10 1 -1 "$SCHEDULER"
 expect_rejected 'rejects an unknown scheduler' \
 	1 100 10 10 10 1 0 round-robin
-expect_rejected 'rejects uppercase FIFO' \
-	1 100 10 10 10 1 0 FIFO
+expect_rejected "rejects uppercase $SCHEDULER_LABEL" \
+	1 100 10 10 10 1 0 "${SCHEDULER^^}"
 expect_rejected 'rejects uppercase EDF' \
 	1 100 10 10 10 1 0 EDF
-expect_rejected 'rejects malformed fifo scheduler input' \
-	1 100 10 10 10 1 0 fif0
+expect_rejected "rejects malformed $SCHEDULER scheduler input" \
+	1 100 10 10 10 1 0 "${SCHEDULER%?}0"
 expect_rejected 'rejects malformed edf scheduler input' \
 	1 100 10 10 10 1 0 edff
 
 section '[3/4] Valid execution and output checks'
-expect_accepted 'accepts FIFO arguments' \
-	1 100 1 1 1 0 0 fifo
+expect_accepted "accepts $SCHEDULER_LABEL arguments" \
+	1 100 1 1 1 0 0 "$SCHEDULER"
 expect_accepted 'accepts EDF arguments' \
 	1 100 1 1 1 0 0 edf
 
 simulation_output="$TEST_DIR/simulation-output"
-if run_program "$simulation_output" 2 100 1 1 1 1 0 fifo; then
+if run_program "$simulation_output" 2 100 1 1 1 1 0 "$SCHEDULER"; then
 	if grep -Eq '^[0-9]+ [0-9]+ (has taken a dongle|is compiling|is debugging|is refactoring|burned out)$' \
 		"$simulation_output"; then
 		pass 'uses the required log format when simulation logs are emitted'
@@ -244,7 +255,7 @@ else
 fi
 
 single_coder_log="$TEST_DIR/single-coder-log"
-if run_program "$single_coder_log" 1 5 100 100 100 1 0 fifo; then
+if run_program "$single_coder_log" 1 5 100 100 100 1 0 "$SCHEDULER"; then
 	if check_log_consistency "$single_coder_log" 1 >/dev/null 2>&1; then
 		pass 'single-coder burnout log is coherent'
 	else
@@ -257,16 +268,16 @@ else
 fi
 
 stress_cases=(
-	'2 100 1 1 1 1 0 fifo'
-	'3 100 1 1 1 1 0 fifo'
-	'4 100 1 1 1 1 0 fifo'
-	'5 100 1 1 1 1 0 fifo'
-	'10 100 1 1 1 1 0 fifo'
-	'2 50 5 5 5 1 0 fifo'
-	'3 200 10 10 10 1 0 fifo'
-	'4 100 100 10 10 10 0 fifo'
-	'4 200 50 20 20 2 0 fifo'
-	'6 300 20 20 20 2 0 fifo'
+	"2 100 1 1 1 1 0 $SCHEDULER"
+	"3 100 1 1 1 1 0 $SCHEDULER"
+	"4 100 1 1 1 1 0 $SCHEDULER"
+	"5 100 1 1 1 1 0 $SCHEDULER"
+	"10 100 1 1 1 1 0 $SCHEDULER"
+	"2 50 5 5 5 1 0 $SCHEDULER"
+	"3 200 10 10 10 1 0 $SCHEDULER"
+	"4 100 100 10 10 10 0 $SCHEDULER"
+	"4 200 50 20 20 2 0 $SCHEDULER"
+	"6 300 20 20 20 2 0 $SCHEDULER"
 	'2 100 1 1 1 1 0 edf'
 	'3 100 1 1 1 1 0 edf'
 	'4 100 1 1 1 1 0 edf'
@@ -304,7 +315,7 @@ else
 	valgrind_args=(valgrind --version)
 	valgrind_version=$("${valgrind_args[@]}" 2>/dev/null)
 	printf '%b  Tool:%b %s\n' "$DIM" "$RESET" "$valgrind_version"
-	for scheduler in fifo edf; do
+	for scheduler in "$SCHEDULER" edf; do
 		valgrind_log="$TEST_DIR/valgrind-$scheduler.log"
 		valgrind_args=(valgrind --leak-check=full --show-leak-kinds=all \
 			--errors-for-leak-kinds=all --track-origins=yes --num-callers=20 \
@@ -338,7 +349,7 @@ else
 	done
 
 	if valgrind --tool=helgrind --version >/dev/null 2>&1; then
-		for scheduler in fifo edf; do
+		for scheduler in "$SCHEDULER" edf; do
 			helgrind_log="$TEST_DIR/helgrind-$scheduler.log"
 			helgrind_args=(valgrind --tool=helgrind --error-exitcode=99 --num-callers=20 \
 				"$PROGRAM" 1 100 1 1 1 0 0 "$scheduler")
